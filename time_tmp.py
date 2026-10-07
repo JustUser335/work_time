@@ -1,80 +1,52 @@
-# import datetime as dt 
-# основное внимание в реализации уделяется эффективному извлечению атрибутов для форматирования и обработки выходных данных.
-
-# для начала выведем все доступные методы
-# сигнатуры методов?
-
-#Общие свойства 
-#Типы date, datetime, time, и timezone обладают следующими общими характеристиками:
-# - Объекты таких типов являются неизменяемыми.
-# - Объекты этих типов являются хешируемыми , то есть их можно использовать в качестве ключей словаря.
-# - Объекты этих типов обеспечивают эффективную сериализацию с помощью pickleмодуля.
-
-# Определение того, является ли объект осведомленным или наивным
-# class datetime.timedelta ( days = 0 , seconds = 0 , microseconds = 0 , milliseconds = 0 , minutes = 0 , hours = 0 , weeks = 0 )
-# Все аргументы являются необязательными и по умолчанию равны 0
-# 
-
-
-# v0.01
-# print(dt.date(2026,9,11)) # наверное есть форматирование вывода судя по выводу
-# print(dt.time(h,m,s,ms))
-# print(dt.datetime(2026,9,11,19,0,0))
-# print(dt.timedelta(2026,9,11,19,0,0)) # считает от нуля
-# print(dt.timedelta(hours=19,minutes=0)) # считает от нуля
-# print(dt.tzinfo(dt.datetime(2026,9,11,19,0,0)))
-# print(dt.timezone(dt.datetime(2026,9,11,19,0,0)))
-
-
-# Давай попробуем вычитать время
-# v0
-# start = {
-#     "hours": 10,
-#     "minutes": 30
-#     }
-# end = {
-#     "hours": 12,
-#     "minutes": 40
-#     }
-
-# time_start = dt.timedelta(hours = start["hours"],minutes = start["minutes"])
-# time_end = dt.timedelta(hours = end["hours"],minutes = end["minutes"])
-# work_time = time_end - time_start
-# print("work_time", work_time, sep=": ")
-
-
 # v1
 import datetime as dt
 from collections import namedtuple
 from typing import Callable
-from functools import reduce
 from rich import print
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 import pytesseract
 import re
 import os
+from typing import overload
 
 Time_naming = namedtuple('Time_naming', ['hours', 'minutes'])
 
-def pt(hours: int, minutes: int) -> tuple: # parameters_time
+def pt(hours: int, minutes: int) -> Time_naming: # parameters_time
     """
-    Инициализирует namedtuple.
+    Инициализирует namedtuple "Часы, минуты".
+
+    Args:
+        hours (int): Часы в 24-часовом формате (0-23)
+        minutes (int): Минуты (0-59)
+
+    Returns:
+        Time_naming: Объект именованного кортежа с указанным временем
+
+    Raises:
+        ValueError: Если Часы/hours или Минуты/minutes выходят из диапазона
     """
+
+    if not (0 <= hours <= 23):
+        raise ValueError("Формат времени 'Часы' указан неверно")
+    if not (0 <= minutes <= 59):
+        raise ValueError("Формат времени 'Минуты' указан неверно")
+    
     return Time_naming(
         hours,
         minutes
     )
 
-def delta_time(start: tuple, end: tuple) -> tuple:
+def delta_time(start: Time_naming, end: Time_naming) -> dt.timedelta:
     """
-    Вычисляет разность между установленными часами.
+    Вычисляет разность между установленным временем.
+    Учитывает переход за полночь.
 
-    Принимает следующие аргументы:
-    start: tuple, end: tuple 
-    Где оба кортежа (часы: int, минуты: int )
+    Args:
+        start (Time_naming): Начальное время работы
+        end (Time_naming): Финальное время работы
 
-    Возвращает:
-    dt.timedelta
+    Returns:
+        work_time (dt.timedelta): Разность между финальным и начальным временем.
     """
     time_start = dt.timedelta( 
         hours = start.hours,
@@ -84,59 +56,84 @@ def delta_time(start: tuple, end: tuple) -> tuple:
         minutes = end.minutes) 
     
     work_time = time_end - time_start
+
+    if work_time.days < 0:
+        work_time += dt.timedelta(days=1)
+
     return work_time
 
-def set_accomulate_value() -> Callable[[dt.timedelta], dt.timedelta]:
+def set_accumulate_value() -> Callable[[dt.timedelta], dt.timedelta]:
     """
     Определяет функцию накопитель и возвращает её.
+    Содержит накопительную переменную duration_list (list)
 
-    Содержит накопительную переменную duration_list type list
+    Returns:
+        accumulate_value (Callable[[dt.timedelta], dt.timedelta]): сумматор времени
     """
     duration_list = list()
 
-    def accomulate_value(current_timedelta: dt.timedelta) -> dt.timedelta:
+    def accumulate_value(current_timedelta: dt.timedelta) -> dt.timedelta:
         """
-        Суммирует время по средствам reduce.
+        Суммирует дельту времени.
 
-        Принимает аргумент:
-        current_timedelta type dt.timedelta
+        Args:
+            current_timedelta (dt.timedelta): текущий показатель разности времени
 
-        Возвращает суммарное значение dt.timedelta
+        Returns:
+            duration_work (dt.timedelta): суммарное время работы
         """
         duration_list.append(current_timedelta)
-        duration_work = reduce(
-            lambda accomulate, current: accomulate + current, 
-            duration_list, 
-            dt.timedelta(hours=0,minutes=0)
-            )
+        duration_work = sum(duration_list, dt.timedelta(hours=0, minutes=0))
+        
         return duration_work
     
-    return accomulate_value
+    return accumulate_value
 
 
-def calc_time(start_hours: int = 0, start_minutes: int = 0, end_hours: int = 0, end_minutes: int = 0) -> tuple:
+def calc_time(
+        start_hours: int = 0,
+        start_minutes: int = 0,
+        end_hours: int = 0,
+        end_minutes: int = 0
+        ) -> dt.timedelta:
     """
-    Входящие параметры:
+    Интерфейс ввода параметров времени напрямую.
 
-    Старт работы
-    start_hours: int = 0,
-    start_minutes: int = 0,
+    Args:
+        start_hours (int, optional): Начальное время работы Часы (0-23). default 0
+        start_minutes (int, optional): Начальное время работы Минуты (0-59). default 0
+        end_hours (int, optional): Финальное время работы Часы (0-23). default 0
+        end_minutes (int, optional): Финальное время работы Минуты (0-59). default 0
 
-    Завершение работы
-    end_hours: int = 0,
-    end_minutes: int = 0
-
-    
-    Возвращает:
-    tuple val type dt.timedelta
+    Returns:
+        time_difference (dt.timedelta): Разность между финальным и начальным временем.
     
     """
-    time_difference = delta_time(pt(start_hours,start_minutes),pt(end_hours,end_minutes))
+
+    time_difference = delta_time(pt(start_hours, start_minutes), pt(end_hours, end_minutes))
     return time_difference
 
-accomulate_value = set_accomulate_value()
+accumulate_value = set_accumulate_value()
 
-def reading_img(path_folder: str) ->  dict: 
+def reading_img(path_folder: str, langs: str = 'eng' ) ->  dict[str, str]: 
+    """
+    Читает все изображения из папки. Язык чтения английский.  
+    Поддержка библиотекой '.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp'  
+    '.jpg' 100%  
+    '.jpeg', '.png', '.bmp', '.tiff', '.webp' тестов не было  
+
+    Args:
+        path_folder (str): путь к папке с изображениями
+        langs (str, optional): Язык распознавания 'eng', 'osd', 'rus'. default eng  
+            дополнительно смотри настройки pytesseract
+
+    Returns:
+        text_entry_dict (dict[str, str]): Сырой текст без обработки. key = filename, val = img data
+
+    Raises:
+        FileNotFoundError: Если папки нет или директория пуста, не нашёл изображений для чтения
+    """
+
     if not os.path.isdir(path_folder):
         raise FileNotFoundError ('path_folder не указывает на папку')
     
@@ -145,43 +142,60 @@ def reading_img(path_folder: str) ->  dict:
         raise FileNotFoundError('Пустая директория')
     
     pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
+    valid_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp')
     text_entry_dict = {}
     for file in listfile:
-        path = os.path.join(path_folder,file)
-        image = Image.open(path)
-        text = pytesseract.image_to_string(image, lang='eng')
-        text_entry_dict[file] = text
+        if not file.lower().endswith(valid_extensions):
+            continue
+        path = os.path.join(path_folder, file)
+        try:
+            with Image.open(path) as image:
+                text = pytesseract.image_to_string(image, lang=langs)
+                text_entry_dict[file] = text
+        except UnidentifiedImageError:
+            print(f'Возможно битое изображение {path}')
+            continue
+
+    if not text_entry_dict:
+        raise FileNotFoundError(f"В папке нет поддерживаемых изображений: {path_folder}")
 
     return text_entry_dict
 
 
-def text_analysis(*, path_folder:str, reading_img: Callable[[str], dict]) -> dict:
+def text_analysis(*, path_folder:str, reading_img: Callable[[str], dict]) -> dict[str, dict[str, str]]:
     """
-    Читает папку с изображениями, извлекает текст. 
+    Форматирует текст, полученный из изображения. 
 
-    - path_folder путь к папке с изображениями
-    - reading_img одноимённая функция для чтения изображений
+    Args:
+        path_folder (str): путь к папке с изображениями
+        reading_img (Callable[[str], dict]): одноимённая функция для чтения изображений
 
-    Возвращает dict форма {'имя картинки': dict{ 'user', 'labor date', 'clock in', 'clock out' }}
+    Returns:
+        dict (dict[str, dict[str, str])
 
-    Возможные баги.
-    Разделитель между часами":"минутами, такой же разделитель между параметром и значением полей 'user', 'labor date'.
-    Решение, последние два поля обрабатываются отдельно, в качестве разделителя используется "|".
-
+    Raises:
+        ValueError: Вероятно пустая строка у объекта text_entry_dict.
+    
     Особенности изображения:
         user: name
         labor date: dd/mm/yyyy
         clock in dd/mm/yyyy hh:mm
         clock out dd/mm/yyyy hh:mm
     """
+
+    # Возможные баги.
+    # Разделитель между часами":"минутами, такой же разделитель между параметром и значением полей 'user', 'labor date'.
+    # Решение, последние два поля обрабатываются отдельно, в качестве разделителя используется "|".
+
     text_entry_dict = reading_img(path_folder)
     processed_data = {}
     for el in text_entry_dict.items():
         if not el[1]:
-            raise ValueError(f'Вероятно пустая строка или 1. Файл {el[0]}, контент {el[1]}')
+            raise ValueError(f'Вероятно пустая строка. Файл {el[0]}, контент {el[1]}')
     
         text = el[1].strip().lower()
-        res = re.finditer(r'(user:.*)(?=\n)|(labor\sdate:.*)(?=\n)|(clock\s[in|out].*)(?= user)', text)
+        res = re.finditer(r'(user:.*)(?=\n)|(labor\sdate:.*)(?=\n)|(clock\s(in|out).*)(?= user)', text)
         pattern = re.compile(r'\s\d+\/\d+\/\d+\s')
         dict_val = {}
 
@@ -199,179 +213,140 @@ def text_analysis(*, path_folder:str, reading_img: Callable[[str], dict]) -> dic
 
 # user_data = text_analysis(path_folder = './img/', reading_img = reading_img)
 
-def integrity_check( datas: Callable[[str], dict]):
-    """
-    Проверка и редактирование выходных данных из "text_analysis".
-    Бывает такое что текст распознан не полностью или некорректно.
-    Проверяем размеры объектов и поля.
-    """
-    standart_fields = ('user', 'labor date', 'clock in', 'clock out')
-
-    for key, data in datas.items():
-        data_keys = data.keys()
-        print(data_keys)
-        check_length = len(standart_fields) == len(data_keys)
-        if not check_length:
-            print(f'''Нестандартная длинна последовательности.
-            data_keys = {len(data_keys)}, standart_fields = {len(standart_fields)}
-            Объект: {key}
-            ''')
-
-        check_fields = all([ field in data_keys  for field in standart_fields ])
-        if check_fields:
-            # успешно, не прерывать
-            ...
-        else:
-            # вставить обновление для полей
-            # если подключать градио, то стои и изображение вывести, я думаю
-            missing_fields = list(filter(None,[ '' if field in data.keys() else field for field in standart_fields ]))
-            print(f'Объект: {key}, Отсутствующие поля {missing_fields}')
-            # вывести какой объект проверить и что дополнить, пользовательский ввод
-            cli(True, missing_fields)
-            ...
-
-res = integrity_check(text_analysis(path_folder = './img/', reading_img = reading_img))
-
-
-# + проверку
-# Добавить ручную правку, 
-# добавить вывод для сравнения фото с тем что нашёл
-# требования к фото
-#   перпендикулярно экрану
-# мысль, может обрезать фото, 
-# стоит заняться обработкой изображений
-
-print(res)
-
-def cli(is_Edit_Mode: bool = False, val_Edit: list = [], datas: dict = {} , / ) -> None:
-    """
-    Ручной ввод параметров, об рабочем времени.
-
-    Args:
-        is_Edit_Mode type bool режим редактирования или стандартной работы ( Default False ):
-        - True редактирует конкретный параметр
-        - False стандартный режим работы, ручной ввод всех параметров
-
-        val_Edit type list - список параметров для редактирования.
-        Возможные параметры ( 'user', 'labor date', 'clock in', 'clock out' )
-
-        datas изменяемый dict
-
-    Return:
-        None
-    """
-    # + проверок надо целый вагон
-    type_answer = {"n","no","н","нет"}
-    if is_Edit_Mode:
-        ...
-    else:
-        while True:
-
-            # clock in
-            h_start = enter_val("Час начала работы")
-            m_start = enter_val("Минуты начала работы")
-            
-            # clock out
-            h_end = enter_val("Час завершения работы")
-            m_end = enter_val("Минуты завершения работы")
-
-            wt = calc_time(h_start,m_start,h_end,m_end)
-            print("[bold][black]Вы работали:[black] [green]{x}[green][/bold]".format(x = wt))
-            all_time = accomulate_value(wt)
-            answer = input("Продолжим? Y = yes/N = no. ( Default Y ) : " )
-            if answer in type_answer:
-                print(f"{str(all_time):*^21}")
-                return
-
 def enter_val(describing_words: str,/) -> int:
     """
-    Обёртка над input. Проверка на число
+    Интерфейс над input. Проверка на число. Только положительные.
 
     Args:
-        describing_words is input([prompt]) вид input(f"{describing_words}: " )
+        describing_words (str): Строка приглашение к вводую. Вид input(f"{describing_words}: ")
 
     Returns: 
-        int
+        input_data (int): Число введённое пользователем
     """
     while True:
-        input_data = input(f"{describing_words}: " )
+        input_data = input(f"{describing_words}: ")
         if input_data.isdigit():
             input_data = int(input_data)
             return input_data
         else:
             print("На вход только число!")
 
-# cli()
 
-# wt = calc_time(2,0,3,15)
-# all_time = accomulate_value(wt)
-# print(all_time)
+@overload
+def cli(is_Edit_Mode: bool = False,/) -> None: ...
 
-# wt = calc_time(2,0,3,15)
-# all_time = accomulate_value(wt)
-# print(all_time)
+@overload
+def cli(is_Edit_Mode: bool = True,/, *args) -> dict[str, dict[str, str]]: ...
 
-############## промежуточный вывод #############
-# дельту можно сложить в ручную, sum не работает
-# сложности. не встретил. Наверно в описании функций
+def cli(is_Edit_Mode = False,/, *args):
+    """
+    Ручной ввод параметров, о рабочем времени.  
 
-# ############### блок теста################
+    Два режима работы: 
+    - стандартный ввод
+    - режим фото (вызов из функции integrity_check).
 
-# ##########################################
-
-
-# v2
-# пока не получилось
-# from collections import namedtuple
-
-# class Working_time_calculation:
-#     def __init__(self, 
-#                  start_hours: int, 
-#                  start_minutes: int, 
-#                  end_hours: int, 
-#                  end_minutes: int
-#                  ):
-#         self.start_hours = start_hours
-#         self.start_minutes = start_minutes
-#         self.end_hours = end_hours
-#         self.end_minutes = end_minutes
-#         self.pt = self.parameters_time()
-
-#     @staticmethod
-#     def parameters_time():
-#         Time_naming = namedtuple('Time_naming', ['hours', 'minutes'])
-#         def pt(hours: int, minutes: int) -> tuple: # parameters_time
-#             return Time_naming(
-#                 hours,
-#                 minutes
-#             )
-#         return pt
-
-#     @staticmethod
-#     def delta_time(start: tuple, end: tuple) -> tuple:
-#         time_start = dt.timedelta( 
-#             hours = start.hours,
-#             minutes = start.minutes )
-#         time_end = dt.timedelta( 
-#             hours = end.hours, 
-#             minutes = end.minutes) 
+    Args:
+        is_Edit_Mode (bool): флаг режима работы  
+            стандарт ( Default False ) ввод всех параметров
+            
+        *args: позиционные аргументы, обязательные при is_Edit_Mode = True
+            1. dict[str, dict[str, str]]: редактируемый объект
+            2. str: ключ записи в словаре
+            3. list[str]: список полей для редактирования.
+                ( доступные поля 'user', 'labor date', 'clock in', 'clock out' )
         
-#         work_time = time_end - time_start
-#         return "work_time", work_time
+    Returns:
+        None | dict[str, dict[str, str]]
+        - None: в стандартном режиме is_Edit_Mode = False
+        - dict: модифицированный словарь для is_Edit_Mode = True
+    """
+    prompt_start = ("Час начала работы","Минуты начала работы")
+    prompt_end = ("Час завершения работы","Минуты завершения работы")
+    prompt_default = ("Часы","Минуты")
 
-#     def time_calc(self):
-#         time_difference = self.delta_time(
-#             self.pt(
-#                 self.start_hours,
-#                 self.start_minutes),
-#             self.pt(
-#                 self.end_hours,
-#                 self.end_minutes)
-#             )
-#         return time_difference
+    def get_valid_val(prompt: tuple[str, str]) -> tuple[int, int]:
+        """
+        Интерфейс обобщает приглашение часы/минуты, от enter_val 
 
-#     def __str__(self):
-#         return "last time {x[0]}: {x[1]}".format( x = self.time_calc())
+        Args:
+            prompt (tuple[str, str]): приглашение ввести часы, минуты
 
-# time_calc = Working_time_calculation(2,0,3,15)
-# print(time_calc)
+        Returns:
+            tuple[int, int]: часы, минуты
+        """
+        h_prompt,m_prompt = prompt
+        hours = enter_val(h_prompt)
+        minutes = enter_val(m_prompt)
+        return hours, minutes
+
+    # + проверок надо целый вагон
+    # + нужно определить какой промпт вставлять
+    type_answer = {"n","no","н","нет", "nein", "nyet"}
+    if is_Edit_Mode:
+        datas, key, missing_fields = args
+        for missing_field in missing_fields:
+            datas[key][missing_field] = "{time[0]}:{time[1]}".format(time = get_valid_val(prompt_default))
+
+        for key, val in datas.items():
+            h_start, m_start = map(int, val["clock in"].split(':'))
+            h_end, m_end     = map(int, val["clock out"].split(':'))
+
+            work_time = calc_time(h_start,m_start,h_end,m_end)
+            print("[bold][black]Вы работали:[black] [green]{x}[green][/bold]".format(x = work_time))
+            all_time = accumulate_value(work_time)
+        # обработать дату
+        print(f"{str(all_time):*^21}")
+        return datas
+            # кажется можно преобразовать данные сразу в дату
+    else:
+        while True:
+            h_start, m_start = get_valid_val(prompt_start)
+            h_end, m_end = get_valid_val(prompt_end)
+
+            work_time = calc_time(h_start,m_start,h_end,m_end)
+            print("[bold][black]Вы работали:[black] [green]{x}[green][/bold]".format(x = work_time))
+            all_time = accumulate_value(work_time)
+            answer = input("Продолжим? Y = yes/N = no. ( Default Y = yes ) : " )
+            if answer in type_answer:
+                print(f"{str(all_time):*^21}")
+                return
+
+
+
+def integrity_check(datas: dict[str, dict[str, str]], /) -> dict[str: dict[str, str]]:
+    """
+    Проверка и редактирование выходных данных из функции text_analysis
+
+    Args:
+        datas (dict[str, dict[str, str]): данные из text_analysis
+
+    Returns:
+        None
+    """
+    # Бывает такое что текст распознан не полностью или некорректно.
+    # Проверяем размеры объектов и поля.
+    standart_fields = ('user', 'labor date', 'clock in', 'clock out')
+    for key, data in datas.items():
+        data_keys = data.keys()
+        print(data_keys)
+        check_length = len(standart_fields) == len(data_keys)
+        if not check_length:
+            print(f'''Нестандартная длина последовательности.
+            data_keys = {len(data_keys)}, standart_fields = {len(standart_fields)}
+            Объект: {key}
+            ''')
+
+        check_fields = all([ field in data_keys  for field in standart_fields ])
+        if not check_fields:
+            # если подключать градио, то стоит и изображение вывести, я думаю
+            missing_fields = list(filter(None,[ '' if field in data.keys() else field for field in standart_fields ]))
+            print(f'Объект: {key}, Отсутствующие поля {missing_fields}')
+            updated_val = cli(True, datas, key, missing_fields)
+            datas.update(updated_val)
+    return datas
+
+if __name__ == "__main__":
+    integrity_check(text_analysis(path_folder = './img/', reading_img = reading_img))
+    # cli()
+
