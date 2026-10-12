@@ -89,7 +89,6 @@ def set_accumulate_value() -> Callable[[dt.timedelta], dt.timedelta]:
     
     return accumulate_value
 
-
 def calc_time(
         start_hours: int = 0,
         start_minutes: int = 0,
@@ -112,8 +111,6 @@ def calc_time(
 
     time_difference = delta_time(pt(start_hours, start_minutes), pt(end_hours, end_minutes))
     return time_difference
-
-accumulate_value = set_accumulate_value()
 
 def reading_img(path_folder: str, langs: str = 'eng' ) ->  dict[str, str]: 
     """
@@ -161,7 +158,6 @@ def reading_img(path_folder: str, langs: str = 'eng' ) ->  dict[str, str]:
         raise FileNotFoundError(f"В папке нет поддерживаемых изображений: {path_folder}")
 
     return text_entry_dict
-
 
 def text_analysis(*, path_folder:str, reading_img: Callable[[str], dict]) -> dict[str, dict[str, str]]:
     """
@@ -211,8 +207,6 @@ def text_analysis(*, path_folder:str, reading_img: Callable[[str], dict]) -> dic
         processed_data[el[0]] = dict_val
     return processed_data
 
-# user_data = text_analysis(path_folder = './img/', reading_img = reading_img)
-
 def enter_val(describing_words: str,/) -> int:
     """
     Интерфейс над input. Проверка на число. Только положительные.
@@ -223,14 +217,24 @@ def enter_val(describing_words: str,/) -> int:
     Returns: 
         input_data (int): Число введённое пользователем
     """
-    while True:
-        input_data = input(f"{describing_words}: ")
-        if input_data.isdigit():
-            input_data = int(input_data)
-            return input_data
-        else:
-            print("На вход только число!")
+    limits = {
+        "Оплата за час Фунты": None,
+        "Пенсы": 100,
+        "default": 3
+    }
+    max_len = limits.get(describing_words, limits["default"])
 
+    while True:
+        input_data = input(f"{describing_words}: ").strip()
+        if not input_data.isdigit() or not input_data:
+            print("На вход только число")
+            continue
+ 
+        if max_len is None or len(input_data) < max_len:
+            return int(input_data)
+        
+        print("Длина превышает формат!")
+        
 
 @overload
 def cli(is_Edit_Mode: bool = False,/) -> None: ...
@@ -240,7 +244,7 @@ def cli(is_Edit_Mode: bool = True,/, *args) -> dict[str, dict[str, str]]: ...
 
 def cli(is_Edit_Mode = False,/, *args):
     """
-    Ручной ввод параметров, о рабочем времени.  
+    Ввод параметров, о рабочем времени и оплате.  
 
     Два режима работы: 
     - стандартный ввод
@@ -261,9 +265,11 @@ def cli(is_Edit_Mode = False,/, *args):
         - None: в стандартном режиме is_Edit_Mode = False
         - dict: модифицированный словарь для is_Edit_Mode = True
     """
+    accumulate_value = set_accumulate_value()
     prompt_start = ("Час начала работы","Минуты начала работы")
     prompt_end = ("Час завершения работы","Минуты завершения работы")
     prompt_default = ("Часы","Минуты")
+    prompt_hourly_pay = ("Оплата за час Фунты", "Пенсы")
 
     def get_valid_val(prompt: tuple[str, str]) -> tuple[int, int]:
         """
@@ -280,10 +286,18 @@ def cli(is_Edit_Mode = False,/, *args):
         minutes = enter_val(m_prompt)
         return hours, minutes
 
+    def payment_calc(*args_t, wt: dt.timedelta) -> float:
+        one_hp_f, one_hp_p = args_t
+        one_hp_in_minutes = round((float(f"{one_hp_f}.{one_hp_p}") / 60),5)
+        work_time_minutes = wt.seconds / 60
+        payment = round(work_time_minutes * one_hp_in_minutes,2)
+        return payment
+    
     # + проверок надо целый вагон
     # + нужно определить какой промпт вставлять
     type_answer = {"n","no","н","нет", "nein", "nyet"}
     if is_Edit_Mode:
+        one_hp = get_valid_val(prompt_hourly_pay)
         datas, key, missing_fields = args
         for missing_field in missing_fields:
             datas[key][missing_field] = "{time[0]}:{time[1]}".format(time = get_valid_val(prompt_default))
@@ -293,25 +307,34 @@ def cli(is_Edit_Mode = False,/, *args):
             h_end, m_end     = map(int, val["clock out"].split(':'))
 
             work_time = calc_time(h_start,m_start,h_end,m_end)
-            print("[bold][black]Вы работали:[black] [green]{x}[green][/bold]".format(x = work_time))
+            payment =  payment_calc(*one_hp, wt = work_time)
+            print("[bold] [black]Вы работали:[black] [green]{x}[green]. "
+                "[black]Оплата:[black] [green]{p}f[green] [/bold].".format(x = work_time, p = payment))
             all_time = accumulate_value(work_time)
         # обработать дату
+        all_time_payment =  payment_calc(*one_hp, wt = all_time)
         print(f"{str(all_time):*^21}")
+        print(f"Всего заработано: {all_time_payment} f")
         return datas
             # кажется можно преобразовать данные сразу в дату
     else:
+        one_hp = get_valid_val(prompt_hourly_pay)
+        print(one_hp)
         while True:
             h_start, m_start = get_valid_val(prompt_start)
             h_end, m_end = get_valid_val(prompt_end)
 
-            work_time = calc_time(h_start,m_start,h_end,m_end)
-            print("[bold][black]Вы работали:[black] [green]{x}[green][/bold]".format(x = work_time))
+            work_time = calc_time(h_start, m_start, h_end, m_end)
+            payment = payment_calc(*one_hp, wt = work_time)
+            print("[bold] [black]Вы работали:[black] [green]{x}[green]. "
+            "[black]Оплата:[black] [green]{p}f[green] [/bold].".format(x = work_time, p = payment))
             all_time = accumulate_value(work_time)
             answer = input("Продолжим? Y = yes/N = no. ( Default Y = yes ) : " )
             if answer in type_answer:
+                all_time_payment =  payment_calc(*one_hp, wt = all_time)
                 print(f"{str(all_time):*^21}")
+                print(f"Всего заработано: {all_time_payment} f")
                 return
-
 
 
 def integrity_check(datas: dict[str, dict[str, str]], /) -> dict[str: dict[str, str]]:
@@ -347,6 +370,6 @@ def integrity_check(datas: dict[str, dict[str, str]], /) -> dict[str: dict[str, 
     return datas
 
 if __name__ == "__main__":
-    integrity_check(text_analysis(path_folder = './img/', reading_img = reading_img))
-    # cli()
+    # integrity_check(text_analysis(path_folder = './img/', reading_img = reading_img))
+    cli()
 
