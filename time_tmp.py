@@ -209,7 +209,7 @@ def text_analysis(*, path_folder:str, reading_img: Callable[[str], dict]) -> dic
 
 def enter_val(describing_words: str,/) -> int:
     """
-    Интерфейс над input. Проверка на число. Только положительные.
+    Интерфейс над input. Проверка на число, формат. Только положительные.
 
     Args:
         describing_words (str): Строка приглашение к вводую. Вид input(f"{describing_words}: ")
@@ -287,6 +287,9 @@ def cli(is_Edit_Mode = False,/, *args):
         return hours, minutes
 
     def payment_calc(*args_t, wt: dt.timedelta) -> float:
+        """
+        
+        """
         one_hp_f, one_hp_p = args_t
         one_hp_in_minutes = round((float(f"{one_hp_f}.{one_hp_p}") / 60),5)
         work_time_minutes = wt.seconds / 60
@@ -319,7 +322,6 @@ def cli(is_Edit_Mode = False,/, *args):
             # кажется можно преобразовать данные сразу в дату
     else:
         one_hp = get_valid_val(prompt_hourly_pay)
-        print(one_hp)
         while True:
             h_start, m_start = get_valid_val(prompt_start)
             h_end, m_end = get_valid_val(prompt_end)
@@ -352,7 +354,7 @@ def integrity_check(datas: dict[str, dict[str, str]], /) -> dict[str: dict[str, 
     standart_fields = ('user', 'labor date', 'clock in', 'clock out')
     for key, data in datas.items():
         data_keys = data.keys()
-        print(data_keys)
+        # print(data_keys)
         check_length = len(standart_fields) == len(data_keys)
         if not check_length:
             print(f'''Нестандартная длина последовательности.
