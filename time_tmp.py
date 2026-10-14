@@ -12,7 +12,8 @@
             labor date: dd/mm/yyyy
             clock in dd/mm/yyyy hh:mm
             clock out dd/mm/yyyy hh:mm
-        При изменении формата полей необходимо редактировать `text_analysis`.
+        При изменении формата полей необходимо редактировать `text_analysis`.  
+        Создать папку img в корне проекта
 """
 
 
@@ -28,7 +29,7 @@ from typing import overload
 
 Time_naming = namedtuple('Time_naming', ['hours', 'minutes'])
 
-def pt(hours: int, minutes: int) -> Time_naming: # parameters_time
+def pt(hours: int, minutes: int) -> Time_naming:
     """
     Инициализирует namedtuple "Часы, минуты".
 
@@ -81,7 +82,7 @@ def delta_time(start: Time_naming, end: Time_naming) -> dt.timedelta:
 
 def set_accumulate_value() -> Callable[[dt.timedelta], dt.timedelta]:
     """
-    Определяет функцию накопитель и возвращает её.
+    Определяет функцию накопитель и возвращает её.  
     Содержит накопительную переменную duration_list (list)
 
     Returns:
@@ -154,8 +155,9 @@ def reading_img(path_folder: str, langs: str = 'eng' ) ->  dict[str, str]:
     listfile = os.listdir(path_folder)
     if not listfile:
         raise FileNotFoundError('Пустая директория')
-    
-    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
+    if os.name == 'nt':
+        pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
     valid_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp')
     text_entry_dict = {}
@@ -203,13 +205,32 @@ def text_analysis(*, path_folder:str, reading_img: Callable[[str], dict]) -> dic
 
     text_entry_dict = reading_img(path_folder)
     processed_data = {}
+
+    def build_pattern(regex_query: bool) -> re.Pattern[str]:
+        """
+        Возвращает скомпилированный regex-шаблон для парсинга строк
+
+        Args:
+            regex_query (bool):  
+                True - для выборки строк (user, labor date, clock in/out).
+                False - специфичный для двух последних строк с датой 12/03/2024
+
+        Returns:
+            re.Pattern[str]: скомпилированный шаблон.
+        """
+            
+        if regex_query:
+            return re.compile(r'(user:.*)(?=\n)|(labor\sdate:.*)(?=\n)|(clock\s(in|out).*)(?= user)')
+        return re.compile(r'\s\d+\/\d+\/\d+\s')     
+                                                        
     for el in text_entry_dict.items():
         if not el[1]:
             raise ValueError(f'Вероятно пустая строка. Файл {el[0]}, контент {el[1]}')
     
         text = el[1].strip().lower()
-        res = re.finditer(r'(user:.*)(?=\n)|(labor\sdate:.*)(?=\n)|(clock\s(in|out).*)(?= user)', text)
-        pattern = re.compile(r'\s\d+\/\d+\/\d+\s')
+        pattern_res = build_pattern(True)
+        pattern = build_pattern(False)
+        res = re.finditer(pattern_res, text)
         dict_val = {}
 
         for txt_str in res:
@@ -405,6 +426,6 @@ def read_images_and_check_result(path: str = './img/', /) -> dict[str, dict[str,
 
 
 if __name__ == "__main__":
-    # read_images_and_check_result()
-    cli()
+    read_images_and_check_result()
+    # cli()
 
