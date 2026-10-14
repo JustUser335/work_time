@@ -1,4 +1,21 @@
-# v1
+"""
+    Предоставляет инструменты извлечения данных о времени работы из фото или консольно, 
+    вычисление итоговой оплаты.
+
+    Точки входа:
+    `read_images_and_check_result()` - автоматическая обработка папки с изображениями.
+    `cli()`- ручной ввод данных через консольный интерфейс (default).
+
+    Для `read_images_and_check_result`
+        Особенности изображения:
+            user: name
+            labor date: dd/mm/yyyy
+            clock in dd/mm/yyyy hh:mm
+            clock out dd/mm/yyyy hh:mm
+        При изменении формата полей необходимо редактировать `text_analysis`.
+"""
+
+
 import datetime as dt
 from collections import namedtuple
 from typing import Callable
@@ -218,8 +235,8 @@ def enter_val(describing_words: str,/) -> int:
         input_data (int): Число введённое пользователем
     """
     limits = {
-        "Оплата за час Фунты": None,
-        "Пенсы": 100,
+        "Оплата за час Базовая валюта": None,
+        "Разменная монета": 100,
         "default": 3
     }
     max_len = limits.get(describing_words, limits["default"])
@@ -269,7 +286,7 @@ def cli(is_Edit_Mode = False,/, *args):
     prompt_start = ("Час начала работы","Минуты начала работы")
     prompt_end = ("Час завершения работы","Минуты завершения работы")
     prompt_default = ("Часы","Минуты")
-    prompt_hourly_pay = ("Оплата за час Фунты", "Пенсы")
+    prompt_hourly_pay = ("Оплата за час Базовая валюта", "Разменная монета")
 
     def get_valid_val(prompt: tuple[str, str]) -> tuple[int, int]:
         """
@@ -286,25 +303,32 @@ def cli(is_Edit_Mode = False,/, *args):
         minutes = enter_val(m_prompt)
         return hours, minutes
 
-    def payment_calc(*args_t, wt: dt.timedelta) -> float:
+    def payment_calc(*args_t: tuple[int, int], wt: dt.timedelta) -> float:
         """
-        
+        Цена за время
+
+        Args:
+            args_t (tuple[int, int]):стоимость часа
+                [0] базовая валюта
+                [1] разменная монета
+            wt (dt.timedelta): Общее отработанное время
+
+        Returns:
+            payment (float): Сумма оплаты, округление до двух знаков.
         """
         one_hp_f, one_hp_p = args_t
-        one_hp_in_minutes = round((float(f"{one_hp_f}.{one_hp_p}") / 60),5)
-        work_time_minutes = wt.seconds / 60
+        one_hp_in_minutes = round((float(one_hp_f + (one_hp_p / 100)) / 60),5)
+        work_time_minutes = wt.total_seconds() / 60
         payment = round(work_time_minutes * one_hp_in_minutes,2)
         return payment
     
-    # + проверок надо целый вагон
-    # + нужно определить какой промпт вставлять
     type_answer = {"n","no","н","нет", "nein", "nyet"}
     if is_Edit_Mode:
-        one_hp = get_valid_val(prompt_hourly_pay)
         datas, key, missing_fields = args
         for missing_field in missing_fields:
             datas[key][missing_field] = "{time[0]}:{time[1]}".format(time = get_valid_val(prompt_default))
-
+        
+        one_hp = get_valid_val(prompt_hourly_pay)
         for key, val in datas.items():
             h_start, m_start = map(int, val["clock in"].split(':'))
             h_end, m_end     = map(int, val["clock out"].split(':'))
@@ -312,14 +336,13 @@ def cli(is_Edit_Mode = False,/, *args):
             work_time = calc_time(h_start,m_start,h_end,m_end)
             payment =  payment_calc(*one_hp, wt = work_time)
             print("[bold] [black]Вы работали:[black] [green]{x}[green]. "
-                "[black]Оплата:[black] [green]{p}f[green] [/bold].".format(x = work_time, p = payment))
+                "[black]Оплата:[black] [green]{p}[green][/bold].".format(x = work_time, p = payment))
             all_time = accumulate_value(work_time)
-        # обработать дату
+
         all_time_payment =  payment_calc(*one_hp, wt = all_time)
         print(f"{str(all_time):*^21}")
-        print(f"Всего заработано: {all_time_payment} f")
+        print(f"Всего заработано: {all_time_payment}")
         return datas
-            # кажется можно преобразовать данные сразу в дату
     else:
         one_hp = get_valid_val(prompt_hourly_pay)
         while True:
@@ -329,17 +352,17 @@ def cli(is_Edit_Mode = False,/, *args):
             work_time = calc_time(h_start, m_start, h_end, m_end)
             payment = payment_calc(*one_hp, wt = work_time)
             print("[bold] [black]Вы работали:[black] [green]{x}[green]. "
-            "[black]Оплата:[black] [green]{p}f[green] [/bold].".format(x = work_time, p = payment))
+            "[black]Оплата:[black] [green]{p}[green][/bold].".format(x = work_time, p = payment))
             all_time = accumulate_value(work_time)
             answer = input("Продолжим? Y = yes/N = no. ( Default Y = yes ) : " )
             if answer in type_answer:
                 all_time_payment =  payment_calc(*one_hp, wt = all_time)
                 print(f"{str(all_time):*^21}")
-                print(f"Всего заработано: {all_time_payment} f")
+                print(f"Всего заработано: {all_time_payment}")
                 return
 
 
-def integrity_check(datas: dict[str, dict[str, str]], /) -> dict[str: dict[str, str]]:
+def integrity_check(datas: dict[str, dict[str, str]], /) -> dict[str, dict[str, str]]:
     """
     Проверка и редактирование выходных данных из функции text_analysis
 
@@ -347,14 +370,11 @@ def integrity_check(datas: dict[str, dict[str, str]], /) -> dict[str: dict[str, 
         datas (dict[str, dict[str, str]): данные из text_analysis
 
     Returns:
-        None
+        datas (dict[str, dict[str, str]): 
     """
-    # Бывает такое что текст распознан не полностью или некорректно.
-    # Проверяем размеры объектов и поля.
     standart_fields = ('user', 'labor date', 'clock in', 'clock out')
     for key, data in datas.items():
         data_keys = data.keys()
-        # print(data_keys)
         check_length = len(standart_fields) == len(data_keys)
         if not check_length:
             print(f'''Нестандартная длина последовательности.
@@ -364,14 +384,27 @@ def integrity_check(datas: dict[str, dict[str, str]], /) -> dict[str: dict[str, 
 
         check_fields = all([ field in data_keys  for field in standart_fields ])
         if not check_fields:
-            # если подключать градио, то стоит и изображение вывести, я думаю
             missing_fields = list(filter(None,[ '' if field in data.keys() else field for field in standart_fields ]))
             print(f'Объект: {key}, Отсутствующие поля {missing_fields}')
             updated_val = cli(True, datas, key, missing_fields)
             datas.update(updated_val)
     return datas
 
+def read_images_and_check_result(path: str = './img/', /) -> dict[str, dict[str, str]]:
+    """
+        Читает изображения из папки, проверка целостности данных.
+
+        Args:
+            path (str): путь к папке с изображениями (default './img/').
+
+        Returns:
+            dict[str, dict[str, str]]: имя изображения и его данные.
+    """
+    raw_analysis = text_analysis(path_folder = path, reading_img = reading_img)
+    return integrity_check(raw_analysis)
+
+
 if __name__ == "__main__":
-    # integrity_check(text_analysis(path_folder = './img/', reading_img = reading_img))
+    # read_images_and_check_result()
     cli()
 
