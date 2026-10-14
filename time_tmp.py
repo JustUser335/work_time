@@ -426,6 +426,6 @@ def read_images_and_check_result(path: str = './img/', /) -> dict[str, dict[str,
 
 
 if __name__ == "__main__":
-    read_images_and_check_result()
-    # cli()
+    # read_images_and_check_result()
+    cli()
 
